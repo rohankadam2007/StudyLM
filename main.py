@@ -1,3 +1,4 @@
+from retrieval import embed_chunks, search
 from pypdf import PdfReader
 from pathlib import Path
 
@@ -7,7 +8,7 @@ def extract_text(pdf_path):
     reader = PdfReader(pdf_path)
     text = ""
     for page in reader.pages:
-        text += page.extract_text() or ""
+        text += (page.extract_text() or "") + "\n"
     return text
 
 #Chunking the text into smaller parts
@@ -25,14 +26,23 @@ def chunk_text(text, chunk_size=1000, overlap=200):
     return chunks
 
 if __name__ == "__main__":
-    result = extract_text(BASE_DIR / "data" / "cn-notes.pdf")
-    print("Characters:", len(result))
+    text = extract_text(BASE_DIR / "data" / "sql_notes.pdf")
 
-    if len(result.strip()) < 100:
+    if len(text.strip()) < 100:
         print("This PDF looks scanned, so I can't read the text. Please upload a text-based PDF.")
     else:
-        chunks = chunk_text(result)
+        chunks = chunk_text(text)
         print("Total chunks:", len(chunks))
-        print(chunks[0][:300])
-        if len(chunks) > 1:
-            print("Overlap OK:", chunks[0][-200:] == chunks[1][:200])
+
+        print("Embedding chunks... (takes a bit)")
+        embeddings = embed_chunks(chunks)
+
+        while True:
+            question = input("\nAsk (or type quit): ")
+            if question.strip().lower() == "quit":
+                break
+
+            results = search(question, chunks, embeddings, k=3)
+            for chunk, score in results:
+                print(f"\n--- score {score:.2f} ---")
+                print(chunk)
