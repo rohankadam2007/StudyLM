@@ -1,6 +1,7 @@
 from retrieval import embed_chunks, search
 from pypdf import PdfReader
 from pathlib import Path
+from llm import build_prompt
 
 BASE_DIR = Path(__file__).parent
 
@@ -27,6 +28,7 @@ def chunk_text(text, chunk_size=1000, overlap=200):
 
 if __name__ == "__main__":
     text = extract_text(BASE_DIR / "data" / "sql_notes.pdf")
+    text = " ".join(text.split())
 
     if len(text.strip()) < 100:
         print("This PDF looks scanned, so I can't read the text. Please upload a text-based PDF.")
@@ -36,7 +38,7 @@ if __name__ == "__main__":
 
         print("Embedding chunks... (takes a bit)")
         embeddings = embed_chunks(chunks)
-
+        
         while True:
             question = input("\nAsk (or type quit): ")
             if question.strip().lower() == "quit":
@@ -46,3 +48,8 @@ if __name__ == "__main__":
             for chunk, score in results:
                 print(f"\n--- score {score:.2f} ---")
                 print(chunk)
+
+            top_chunks = [chunk for chunk, score in results]
+            prompt = build_prompt(question, top_chunks)
+            print("\n===== PROMPT =====")
+            print(prompt)
