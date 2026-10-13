@@ -1,7 +1,7 @@
 from retrieval import embed_chunks, search
 from pypdf import PdfReader
 from pathlib import Path
-from llm import build_prompt
+from llm import build_prompt,ask_model
 
 BASE_DIR = Path(__file__).parent
 
@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
         print("Embedding chunks... (takes a bit)")
         embeddings = embed_chunks(chunks)
-        
+
         while True:
             question = input("\nAsk (or type quit): ")
             if question.strip().lower() == "quit":
@@ -51,5 +51,5 @@ if __name__ == "__main__":
 
             top_chunks = [chunk for chunk, score in results]
             prompt = build_prompt(question, top_chunks)
-            print("\n===== PROMPT =====")
-            print(prompt)
+            answer = ask_model(prompt)
+            print("\nAnswer:", answer)
