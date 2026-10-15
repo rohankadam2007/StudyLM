@@ -44,12 +44,15 @@ if __name__ == "__main__":
             if question.strip().lower() == "quit":
                 break
 
-            results = search(question, chunks, embeddings, k=3)
+            results = search(question, chunks, embeddings, k=5)
             for chunk, score in results:
                 print(f"\n--- score {score:.2f} ---")
                 print(chunk)
 
             top_chunks = [chunk for chunk, score in results]
             prompt = build_prompt(question, top_chunks)
-            answer = ask_model(prompt)
-            print("\nAnswer:", answer)
+            try:
+                answer = ask_model(prompt)
+                print("\nAnswer:", answer)
+            except Exception:
+                 print("\nCould not reach the model. Is Ollama running?")
