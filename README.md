@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📚 Ask VTU Notes
+# 📚 StudyLM
 
 ### Ask questions from your own VTU notes, 100% offline.
 
@@ -72,14 +72,14 @@ ollama pull llama3.2:3b
 
 **2. Clone the project and install dependencies**
 ```bash
-git clone https://github.com/<rohankadam2007>/<ask-vtu-notes>.git
-cd <ask-vtu-notes>
+git clone https://github.com/<rohankadam2007>/<StudyLM>.git
+cd <StudyLM>
 pip install -r requirements.txt
 ```
 
 **3. Add your notes**
 
-Put your PDF files in the `<notes-folder>/` folder.
+Put your PDF files in the `<sql-vtu-notes>/` folder.
 
 **4. Run**
 ```bash
@@ -130,4 +130,4 @@ GitHub: [@rohankadam2007](https://github.com/rohankadam2007)
 
 <div align="center">
 ⭐ If you find this useful, consider giving it a star.
-</div>
+</div> 
