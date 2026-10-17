@@ -1,18 +1,16 @@
-import streamlit as st
-from pathlib import Path
+import os
 import pickle
+from pathlib import Path
 import numpy as np
 import ollama
+import streamlit as st
 
 # -----------------------------------------------------------------------------
-# 1. Page Configuration & Paths (Instant Execution)
+# 1. Environment & Paths Configuration
 # -----------------------------------------------------------------------------
-st.set_page_config(
-    page_title="StudyLM — Academic AI Workspace",
-    page_icon="📓",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Explicitly support Homebrew binaries on macOS Apple Silicon
+if "/opt/homebrew/bin" not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = f"/opt/homebrew/bin:{os.environ.get('PATH', '')}"
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -20,8 +18,15 @@ CACHE_DIR = BASE_DIR / ".cache"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+st.set_page_config(
+    page_title="StudyLM — Academic AI Workspace",
+    page_icon="📓",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # -----------------------------------------------------------------------------
-# 2. Render UI Layout Immediately (No lag for the browser)
+# 2. UI Layout & Custom CSS
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -52,7 +57,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 3. Sidebar Setup
+# 3. Sidebar Controls
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### 📂 Sources & Knowledge Base")
@@ -83,15 +88,15 @@ with st.sidebar:
         st.rerun()
 
 # -----------------------------------------------------------------------------
-# 4. Lazy-Loaded Embedding Model (Only loads when needed)
+# 4. Lazy-Loaded Embedding Model
 # -----------------------------------------------------------------------------
-@st.cache_resource(show_spinner="⚡ Loading neural embedding engine...")
+@st.cache_resource(show_spinner="⚡ Initializing embedding engine...")
 def get_embed_model():
     from sentence_transformers import SentenceTransformer
     return SentenceTransformer("all-MiniLM-L6-v2")
 
 # -----------------------------------------------------------------------------
-# 5. Fast Cached Document Processor
+# 5. Document Processing & Persistent Disk Caching
 # -----------------------------------------------------------------------------
 def get_cache_paths(pdf_name):
     base_stem = Path(pdf_name).stem
@@ -109,6 +114,7 @@ def load_cached_index(pdf_name):
 
 def build_pdf_index(pdf_name):
     from pypdf import PdfReader
+
     pdf_path = DATA_DIR / pdf_name
     reader = PdfReader(pdf_path)
     
@@ -119,28 +125,46 @@ def build_pdf_index(pdf_name):
     page_texts = []
     total_chars = 0
 
+    # 1. Native text extraction pass
     for page in reader.pages:
         raw_text = page.extract_text() or ""
         cleaned = " ".join(raw_text.split())
         page_texts.append(cleaned)
         total_chars += len(cleaned)
 
-    # Scanned notes fallback
+    # 2. Scanned PDF fallback via OCR
     if total_chars < 50:
+        st.info(f"🔍 `{pdf_name}` contains minimal digital text. Running OCR extraction...")
         try:
             import pytesseract
             from pdf2image import convert_from_path
-            images = convert_from_path(pdf_path)
+
+            brew_tesseract = "/opt/homebrew/bin/tesseract"
+            if os.path.exists(brew_tesseract):
+                pytesseract.pytesseract.tesseract_cmd = brew_tesseract
+
+            poppler_dir = "/opt/homebrew/bin" if os.path.exists("/opt/homebrew/bin/pdftoppm") else None
+
+            images = convert_from_path(pdf_path, poppler_path=poppler_dir)
             page_texts = []
             total_chars = 0
-            for img in images:
+            
+            ocr_progress = st.progress(0, text="Reading scanned pages...")
+            for idx, img in enumerate(images):
                 ocr_str = pytesseract.image_to_string(img)
                 cleaned = " ".join(ocr_str.split())
                 page_texts.append(cleaned)
                 total_chars += len(cleaned)
-        except Exception:
-            pass
+                percent = int(((idx + 1) / len(images)) * 100)
+                ocr_progress.progress(percent, text=f"OCR processing page {idx + 1} of {len(images)}...")
 
+            ocr_progress.empty()
+            st.success("✅ OCR complete! Indexing document vectors...")
+
+        except Exception as ocr_err:
+            st.error(f"⚠️ OCR engine error: {ocr_err}")
+
+    # 3. Page-aware chunking
     for page_idx, text in enumerate(page_texts):
         if not text:
             continue
@@ -156,6 +180,7 @@ def build_pdf_index(pdf_name):
                 break
             start += chunk_size - overlap
 
+    # 4. Vector encoding and disk caching
     if chunks:
         model = get_embed_model()
         texts = [c["text"] for c in chunks]
@@ -174,16 +199,15 @@ def build_pdf_index(pdf_name):
 
     return chunks, total_chars, total_pages, embeddings
 
-# Check cache first; build only if missing
+# Check cache first; index only on initial run
 cached = load_cached_index(selected_pdf)
 if cached is not None:
     chunks_meta, total_chars, total_pages, embeddings = cached
 else:
-    with st.spinner(f"Indexing `{selected_pdf}` for the first time..."):
-        chunks_meta, total_chars, total_pages, embeddings = build_pdf_index(selected_pdf)
+    chunks_meta, total_chars, total_pages, embeddings = build_pdf_index(selected_pdf)
 
 # -----------------------------------------------------------------------------
-# 6. Status Metrics Bar
+# 6. Status Metrics Display
 # -----------------------------------------------------------------------------
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -193,17 +217,17 @@ with col2:
 with col3:
     st.markdown(f'<div class="stat-card"><div class="stat-value">{total_chars:,}</div><div class="stat-label">Characters</div></div>', unsafe_allow_html=True)
 with col4:
-    status_label = "Ready (Cached)" if chunks_meta else "Unreadable"
+    status_label = "Ready" if chunks_meta else "Unreadable"
     st.markdown(f'<div class="stat-card"><div class="stat-value">{status_label}</div><div class="stat-label">Status</div></div>', unsafe_allow_html=True)
 
 st.write("")
 
 if total_chars < 50:
-    st.warning(f"⚠️ **`{selected_pdf}` has minimal text.** Verify that scanned notes have local OCR enabled.")
+    st.warning(f"⚠️ **`{selected_pdf}` has minimal text.** Verify OCR tools or upload a typed PDF.")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 7. LLM Query Helper & Studio Tools
+# 7. LLM Query Interface
 # -----------------------------------------------------------------------------
 def query_llm(system_prompt, user_prompt):
     try:
@@ -217,7 +241,7 @@ def query_llm(system_prompt, user_prompt):
         )
         return response["message"]["content"]
     except Exception as err:
-        return f"⚠️ Unable to reach Ollama. Check `ollama serve`. Error: {err}"
+        return f"⚠️ Unable to reach Ollama. Verify `ollama serve` is running. Error: {err}"
 
 def run_studio_tool(action_name, task_prompt, system_inst):
     with st.spinner(f"Generating {action_name}..."):
@@ -228,14 +252,14 @@ def run_studio_tool(action_name, task_prompt, system_inst):
         st.divider()
 
 if study_guide_btn:
-    run_studio_tool("📋 Study Guide", "Create a structured study guide with core concepts and high-yield takeaways.", "You are an academic study assistant.")
+    run_studio_tool("📋 Study Guide", "Create a structured study guide with core concepts and revision points.", "You are an academic study assistant.")
 if quiz_btn:
-    run_studio_tool("❓ Practice Quiz", "Create 5 VTU exam-style questions with an answer key at the bottom.", "You are a university examiner.")
+    run_studio_tool("❓ Practice Quiz", "Create 5 exam-style questions with complete solutions at the bottom.", "You are a university exam creator.")
 if glossary_btn:
-    run_studio_tool("🏷️ Technical Glossary", "Extract key definitions and formulas into an alphabetical list.", "You are a technical glossary generator.")
+    run_studio_tool("🏷️ Technical Glossary", "Extract key definitions and formulas alphabetically.", "You are a technical glossary generator.")
 
 # -----------------------------------------------------------------------------
-# 8. Chat & Grounded Retrieval
+# 8. Grounded Retrieval Chat
 # -----------------------------------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -257,38 +281,59 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Searching passages & synthesizing answer..."):
-            model = get_embed_model()
-            q_vec = model.encode(prompt, normalize_embeddings=True)
-            scores = embeddings @ q_vec
-            top_k_indices = np.argsort(scores)[::-1][:3]
-            
-            retrieved_sources = [
-                {
-                    "text": chunks_meta[i]["text"],
-                    "page": chunks_meta[i]["page"],
-                    "source": chunks_meta[i]["source"],
-                    "score": float(scores[i])
-                }
-                for i in top_k_indices
-            ]
+        # 1. Fast Vector Search
+        model = get_embed_model()
+        q_vec = model.encode(prompt, normalize_embeddings=True)
+        scores = embeddings @ q_vec
+        # Using top 4 provides plenty of context for 10-mark answers without slowing down Llama
+        top_k_indices = np.argsort(scores)[::-1][:4]
+        
+        retrieved_sources = [
+            {
+                "text": chunks_meta[i]["text"],
+                "page": chunks_meta[i]["page"],
+                "source": chunks_meta[i]["source"],
+                "score": float(scores[i])
+            }
+            for i in top_k_indices
+        ]
 
-            context_block = "\n\n".join([f"[Page {s['page']}]: {s['text']}" for s in retrieved_sources])
-            user_msg = f"Context:\n{context_block}\n\nQuestion: {prompt}"
-            sys_msg = (
-                "You answer questions using ONLY the context provided by the user.\n"
-                "- If the answer is missing, state: \"I don't know based on these notes.\"\n"
-                "- Cite pages like [Page X] where applicable.\n"
-                "- Be concise and direct."
-            )
-            out_text = query_llm(sys_msg, user_msg)
-            st.markdown(out_text)
+        context_block = "\n\n".join([f"[Page {s['page']}]: {s['text']}" for s in retrieved_sources])
+        user_msg = f"Context:\n{context_block}\n\nQuestion: {prompt}"
+        sys_msg = (
+            "You are an academic university tutor preparing answers for exams.\n"
+            "- Using the provided context chunks, synthesize a thorough, well-structured answer.\n"
+            "- If the user asks for '5 marks' or '10 marks', format with clear headings, bullet points, and definitions.\n"
+            "- Always cite pages as [Page X] when referencing facts.\n"
+            "- Only state you don't know if the topic is completely unmentioned."
+        )
 
-            with st.expander("📌 Source Grounding & Citations"):
-                for src in retrieved_sources:
-                    conf = max(0.0, min(100.0, (src['score'] + 1) / 2 * 100))
-                    st.markdown(f"**📖 {src['source']} — Page {src['page']}** • `{conf:.1f}% Relevance Match`")
-                    st.caption(f"\"{src['text']}\"")
+        # 2. Real-Time Token Streaming Generator
+        def stream_response():
+            try:
+                stream = ollama.chat(
+                    model="llama3.2:3b",
+                    messages=[
+                        {"role": "system", "content": sys_msg},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    stream=True,
+                    options={"temperature": 0.2}
+                )
+                for chunk in stream:
+                    yield chunk["message"]["content"]
+            except Exception as e:
+                yield f"⚠️ Ollama error: {e}"
+
+        # 3. Stream text live to the screen
+        out_text = st.write_stream(stream_response())
+
+        # 4. Show Grounding / Citations right below
+        with st.expander("📌 Source Grounding & Citations"):
+            for src in retrieved_sources:
+                conf = max(0.0, min(100.0, (src['score'] + 1) / 2 * 100))
+                st.markdown(f"**📖 {src['source']} — Page {src['page']}** • `{conf:.1f}% Relevance Match`")
+                st.caption(f"\"{src['text']}\"")
 
     st.session_state.messages.append({
         "role": "assistant",

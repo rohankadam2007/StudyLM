@@ -9,10 +9,13 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
+.cache/
+*.pkl
+*.npy
 
 # Operating System files
 .DS_Store
 Thumbs.db
 
-# Uploaded documents (keep sample data, ignore large temporary files if needed)
-data/*.tmp.cache/
+# Uploaded documents
+data/*.tmp
