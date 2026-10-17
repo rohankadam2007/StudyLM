@@ -1,5 +1,18 @@
+# Virtual environment
 venv/
-.env
-data/*.pdf
-.DS_Store
+ENV/
+env/
+
+# Python cache & build files
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Uploaded documents (keep sample data, ignore large temporary files if needed)
+data/*.tmp.cache/
