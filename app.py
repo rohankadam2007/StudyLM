@@ -230,14 +230,8 @@ if total_chars < 50:
 # -----------------------------------------------------------------------------
 def query_llm(system_prompt, user_prompt):
     try:
-        response = ollama.chat(
-            model="llama3.2:3b",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            options={"temperature": 0},
-        )
+        prompt = build_prompt(user_question, retrieved_chunks)
+        response = ask_model(prompt)
         return response["message"]["content"]
     except Exception as err:
         return f"⚠️ Unable to reach Ollama. Verify `ollama serve` is running. Error: {err}"
