@@ -9,9 +9,9 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
-.cache/
-*.pkl
-*.npy
+#.cache/
+#*.pkl
+#*.npy
 
 # Operating System files
 .DS_Store
