@@ -1,4 +1,9 @@
-import ollama
+import os
+from groq import Groq
+
+# Initialize Groq client
+# Reads from GROQ_API_KEY environment variable (locally or in Streamlit Cloud secrets)
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 SYSTEM_PROMPT = """You answer questions using ONLY the context given by the user.
 Rules:
@@ -7,19 +12,17 @@ Rules:
 - If the answer is not in the context, say exactly: "I don't know based on these notes."
 - Keep the answer short."""
 
-
 def build_prompt(question, chunks):
     context = "\n\n".join(chunks)
     return f"Context:\n{context}\n\nQuestion: {question}"
 
-
 def ask_model(prompt):
-    response = ollama.chat(
-        model="llama3.2:3b",
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        options={"temperature": 0},
+        temperature=0,
     )
-    return response["message"]["content"]
+    return response.choices[0].message.content
