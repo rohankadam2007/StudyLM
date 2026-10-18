@@ -235,6 +235,25 @@ def query_llm(system_prompt, user_prompt):
         return response["message"]["content"]
     except Exception as err:
         return f"⚠️ Unable to reach Ollama. Verify `ollama serve` is running. Error: {err}"
+```[cite: 10]
+
+There are two issues here:
+1. `ask_model(prompt)` from your updated `llm.py` already returns the raw string (`return response.choices[0].message.content`). Calling `response["message"]["content"]` throws a `TypeError: string indices must be integers`, which triggers the `except` block that prints the misleading Ollama error[cite: 10].
+2. The function parameters `system_prompt` and `user_prompt` are defined, but inside the function it refers to undefined global variables `user_question` and `retrieved_chunks`[cite: 10].
+
+---
+
+### Step 1: Update `query_llm` in `app.py`
+
+In `app.py`, replace lines 231 to 237 with:
+
+```python
+def query_llm(system_prompt, user_prompt):
+    try:
+        # Pass the formatted prompt directly to Groq's ask_model
+        return ask_model(user_prompt)
+    except Exception as err:
+        return f"⚠️ Inference Error: {err}"
 
 def run_studio_tool(action_name, task_prompt, system_inst):
     with st.spinner(f"Generating {action_name}..."):
