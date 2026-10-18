@@ -3,3 +3,6 @@ groq
 sentence-transformers
 pypdf
 numpy
+pytesseract
+pdf2image
+Pillow
