@@ -19,3 +19,4 @@ Thumbs.db
 
 # Uploaded documents
 data/*.tmp
+.streamlit/secrets.toml
