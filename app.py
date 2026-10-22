@@ -4,10 +4,6 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 
-# Import your LLM provider
-# If using Ollama:
-import ollama
-
 # If using an external client (like Groq via an llm.py file), uncomment below:
 # from llm import ask_model
 
@@ -231,25 +227,15 @@ if total_chars < 50:
 # -----------------------------------------------------------------------------
 # 7. LLM Query Interface
 # -----------------------------------------------------------------------------
-def query_llm(system_prompt: str, user_prompt: str) -> str:
-    """Unified non-streaming call to LLM."""
+def query_llm(system_prompt, user_prompt):
     try:
-        # Standard Ollama implementation:
-        response = ollama.chat(
-            model="llama3.2:3b",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            options={"temperature": 0.2}
-        )
-        return response["message"]["content"]
-        
-        # If instead using an external ask_model function, use this pattern:
-        # combined_prompt = f"System: {system_prompt}\n\nUser: {user_prompt}"
-        # return ask_model(combined_prompt)
+        # If you are using ask_model from llm.py:
+        from llm import ask_model
+        combined = f"System: {system_prompt}\n\nUser: {user_prompt}"
+        return ask_model(combined)
     except Exception as err:
         return f"⚠️ Inference Error: {err}"
+
 
 def run_studio_tool(action_name, task_prompt, system_inst):
     with st.spinner(f"Generating {action_name}..."):
@@ -321,24 +307,16 @@ if prompt:
             "- Only state you don't know if the topic is completely unmentioned."
         )
 
-        # 2. Token Streaming
-        def stream_response():
+        # 2. Inference via Groq / Cloud API
+        with st.spinner("Thinking..."):
             try:
-                stream = ollama.chat(
-                    model="llama3.2:3b",
-                    messages=[
-                        {"role": "system", "content": sys_msg},
-                        {"role": "user", "content": user_msg},
-                    ],
-                    stream=True,
-                    options={"temperature": 0.2}
-                )
-                for chunk in stream:
-                    yield chunk["message"]["content"]
+                from llm import ask_model
+                full_prompt = f"{sys_msg}\n\n{user_msg}"
+                out_text = ask_model(full_prompt)
+                st.markdown(out_text)
             except Exception as e:
-                yield f"⚠️ Inference error: {e}"
-
-        out_text = st.write_stream(stream_response())
+                out_text = f"⚠️ Inference error: {e}"
+                st.error(out_text)
 
         # 3. Grounding / Citations
         with st.expander("📌 Source Grounding & Citations"):
