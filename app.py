@@ -4,10 +4,16 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 
+# Import your LLM provider
+# If using Ollama:
+import ollama
+
+# If using an external client (like Groq via an llm.py file), uncomment below:
+# from llm import ask_model
+
 # -----------------------------------------------------------------------------
 # 1. Environment & Paths Configuration
 # -----------------------------------------------------------------------------
-# Explicitly support Homebrew binaries on macOS Apple Silicon
 if "/opt/homebrew/bin" not in os.environ.get("PATH", ""):
     os.environ["PATH"] = f"/opt/homebrew/bin:{os.environ.get('PATH', '')}"
 
@@ -48,8 +54,8 @@ st.markdown("""
 st.markdown('<div class="main-header">📓 StudyLM</div>', unsafe_allow_html=True)
 st.markdown("""
 <div class="badge-container">
-    <span class="badge">🔒 100% Offline & Private</span>
-    <span class="badge">⚡ Llama 3.2:3b</span>
+    <span class="badge">🔒 Private Academic Workspace</span>
+    <span class="badge">⚡ Local / Accelerated Inference</span>
     <span class="badge">📐 all-MiniLM-L6-v2 (384-d)</span>
     <span class="badge">📄 Page-Level Citations</span>
 </div>
@@ -124,14 +130,14 @@ def build_pdf_index(pdf_name):
     page_texts = []
     total_chars = 0
 
-    # 1. Native text extraction pass
+    # 1. Text extraction
     for page in reader.pages:
         raw_text = page.extract_text() or ""
         cleaned = " ".join(raw_text.split())
         page_texts.append(cleaned)
         total_chars += len(cleaned)
 
-    # 2. Scanned PDF fallback via OCR
+    # 2. OCR Fallback if needed
     if total_chars < 50:
         st.info(f"🔍 `{pdf_name}` contains minimal digital text. Running OCR extraction...")
         try:
@@ -143,7 +149,6 @@ def build_pdf_index(pdf_name):
                 pytesseract.pytesseract.tesseract_cmd = brew_tesseract
 
             poppler_dir = "/opt/homebrew/bin" if os.path.exists("/opt/homebrew/bin/pdftoppm") else None
-
             images = convert_from_path(pdf_path, poppler_path=poppler_dir)
             page_texts = []
             total_chars = 0
@@ -155,11 +160,10 @@ def build_pdf_index(pdf_name):
                 page_texts.append(cleaned)
                 total_chars += len(cleaned)
                 percent = int(((idx + 1) / len(images)) * 100)
-                ocr_progress.progress(percent, text=f"OCR processing page {idx + 1} of {len(images)}...")
+                ocr_progress.progress(percent, text=f"OCR page {idx + 1}/{len(images)}...")
 
             ocr_progress.empty()
             st.success("✅ OCR complete! Indexing document vectors...")
-
         except Exception as ocr_err:
             st.error(f"⚠️ OCR engine error: {ocr_err}")
 
@@ -198,7 +202,6 @@ def build_pdf_index(pdf_name):
 
     return chunks, total_chars, total_pages, embeddings
 
-# Check cache first; index only on initial run
 cached = load_cached_index(selected_pdf)
 if cached is not None:
     chunks_meta, total_chars, total_pages, embeddings = cached
@@ -228,30 +231,23 @@ if total_chars < 50:
 # -----------------------------------------------------------------------------
 # 7. LLM Query Interface
 # -----------------------------------------------------------------------------
-def query_llm(system_prompt, user_prompt):
+def query_llm(system_prompt: str, user_prompt: str) -> str:
+    """Unified non-streaming call to LLM."""
     try:
-        prompt = build_prompt(user_question, retrieved_chunks)
-        response = ask_model(prompt)
+        # Standard Ollama implementation:
+        response = ollama.chat(
+            model="llama3.2:3b",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            options={"temperature": 0.2}
+        )
         return response["message"]["content"]
-    except Exception as err:
-        return f"⚠️ Unable to reach Ollama. Verify `ollama serve` is running. Error: {err}"
-```[cite: 10]
-
-There are two issues here:
-1. `ask_model(prompt)` from your updated `llm.py` already returns the raw string (`return response.choices[0].message.content`). Calling `response["message"]["content"]` throws a `TypeError: string indices must be integers`, which triggers the `except` block that prints the misleading Ollama error[cite: 10].
-2. The function parameters `system_prompt` and `user_prompt` are defined, but inside the function it refers to undefined global variables `user_question` and `retrieved_chunks`[cite: 10].
-
----
-
-### Step 1: Update `query_llm` in `app.py`
-
-In `app.py`, replace lines 231 to 237 with:
-
-```python
-def query_llm(system_prompt, user_prompt):
-    try:
-        # Pass the formatted prompt directly to Groq's ask_model
-        return ask_model(user_prompt)
+        
+        # If instead using an external ask_model function, use this pattern:
+        # combined_prompt = f"System: {system_prompt}\n\nUser: {user_prompt}"
+        # return ask_model(combined_prompt)
     except Exception as err:
         return f"⚠️ Inference Error: {err}"
 
@@ -293,12 +289,17 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        # 1. Fast Vector Search
+        if len(chunks_meta) == 0 or embeddings.size == 0:
+            st.error("No searchable text found in this document.")
+            st.stop()
+
+        # 1. Fast Vector Search with bounds check
         model = get_embed_model()
         q_vec = model.encode(prompt, normalize_embeddings=True)
         scores = embeddings @ q_vec
-        # Using top 4 provides plenty of context for 10-mark answers without slowing down Llama
-        top_k_indices = np.argsort(scores)[::-1][:4]
+        
+        top_k = min(4, len(chunks_meta))
+        top_k_indices = np.argsort(scores)[::-1][:top_k]
         
         retrieved_sources = [
             {
@@ -320,7 +321,7 @@ if prompt:
             "- Only state you don't know if the topic is completely unmentioned."
         )
 
-        # 2. Real-Time Token Streaming Generator
+        # 2. Token Streaming
         def stream_response():
             try:
                 stream = ollama.chat(
@@ -335,12 +336,11 @@ if prompt:
                 for chunk in stream:
                     yield chunk["message"]["content"]
             except Exception as e:
-                yield f"⚠️ Ollama error: {e}"
+                yield f"⚠️ Inference error: {e}"
 
-        # 3. Stream text live to the screen
         out_text = st.write_stream(stream_response())
 
-        # 4. Show Grounding / Citations right below
+        # 3. Grounding / Citations
         with st.expander("📌 Source Grounding & Citations"):
             for src in retrieved_sources:
                 conf = max(0.0, min(100.0, (src['score'] + 1) / 2 * 100))
