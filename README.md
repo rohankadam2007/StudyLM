@@ -111,7 +111,7 @@ Use the live deployed app directly in your browser:
 
 **1. Clone the project and install dependencies**
 ```bash
-git clone [https://github.com/rohankadam2007/StudyLM.git](https://github.com/rohankadam2007/StudyLM.git)
+git clone https://github.com/rohankadam2007/StudyLM.git
 cd StudyLM
 pip install -r requirements.txt
 ```
