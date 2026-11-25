@@ -67,6 +67,38 @@ Searching through hundreds of pages of notes before exams is slow. This tool let
 
 ---
 
+---
+
+## 🎯 Problem Statement
+Students lose hours searching hundreds of pages of notes before exams, and
+general chatbots give answers with no proof of where they came from.
+
+**Solution:** StudyLM answers questions only from the student's own PDFs and
+cites the exact file and page, so every answer can be verified.
+
+## 🧠 Prompt Design
+- **Grounded prompt:** the model must answer ONLY from the retrieved context
+- **Low temperature (0.1):** factual, consistent answers
+- **Refusal rule:** if the answer is not in the notes, it replies
+  "I don't know based on these notes." (reduces hallucination)
+- **Task prompts:** separate prompts for Study Guide, 5-Question Quiz, and Glossary
+
+## 🧪 Testing
+```bash
+pip install -r requirements.txt
+python3 -m pytest tests/ -v
+```
+Tests cover embedding shape, normalization, top-k retrieval, score ordering,
+and retrieval correctness.
+
+## 🔒 Security
+- API keys are stored in Streamlit secrets, never in the repo
+- `.env`, `secrets.toml`, and `.cache/` are git-ignored
+- Answers are restricted to uploaded notes
+
+
+---
+
 ## 🚀 Getting Started
 
 ### Option 1: Live Web App (No Setup)

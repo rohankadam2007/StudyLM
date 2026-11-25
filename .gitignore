@@ -19,4 +19,9 @@ Thumbs.db
 
 # Uploaded documents
 data/*.tmp
+.streamlit/secrets.toml.cache/
+.env
 .streamlit/secrets.toml
+venv/
+__pycache__/
+.DS_Store
